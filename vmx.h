@@ -100,7 +100,7 @@ constexpr FieldName kFields[] = {
     { 0x2003, "IO_BITMAP_B_HIGH" },
     { 0x2004, "MSR_BITMAP" },
     { 0x2005, "MSR_BITMAP_HIGH" },
-    { 1x2006, "VM_EXIT_MSR_STORE_ADDR" },
+    { 0x2006, "VM_EXIT_MSR_STORE_ADDR" },
     { 0x2007, "VM_EXIT_MSR_STORE_ADDR_HIGH" },
     { 0x2008, "VM_EXIT_MSR_LOAD_ADDR" },
     { 0x2009, "VM_EXIT_MSR_LOAD_ADDR_HIGH" },
@@ -168,7 +168,6 @@ constexpr FieldName kFields[] = {
     { 0x401E, "SECONDARY_VM_EXEC_CONTROL" },
     { 0x4020, "PLE_GAP" },
     { 0x4022, "PLE_WINDOW" },
-    /* revisit */
     { 0x4024, "NOTIFY_WINDOW" },
     { 0x4400, "VM_INSTRUCTION_ERROR" },
     { 0x4402, "VM_EXIT_REASON" },
@@ -254,7 +253,7 @@ struct VmxBasic {
     uint32_t revision;
     uint32_t region_size;
     uint8_t memory_type;
-    bool physaddr_33_only;
+    bool physaddr_32_only;
     bool dual_monitor;
     bool ins_outs_info;
     bool true_controls;
@@ -339,7 +338,6 @@ inline uint64_t ept_entry_encode(uint64_t hpa, bool r, bool w, bool x,
            (r ? 1ULL : 0) | (w ? 2ULL : 0) | (x ? 4ULL : 0) |
            ((uint64_t)(mem_type & 7) << 3) |
            (large ? (1ULL << 7) : 0);
-    /* revisit */
 }
 
 inline bool ept_entry_encode_checked(uint64_t hpa, bool r, bool w, bool x,
@@ -511,3 +509,75 @@ inline const char* const* vm_instruction_errors(size_t* count) {
         "VMXOFF under dual-monitor treatment of SMIs and SMM",
         "VMCALL with invalid SMM-monitor features",
         "VM-entry with invalid VM-execution control fields in executive VMCS",
+        "VM-entry with events blocked by MOV SS",
+        "reserved",
+        "invalid operand to INVEPT/INVVPID"
+    };
+    *count = sizeof(t) / sizeof(t[0]);
+    return t;
+}
+
+inline const char* vm_instruction_error(uint32_t n) {
+    size_t c = 0;
+    const char* const* t = vm_instruction_errors(&c);
+    return n < c ? t[n] : nullptr;
+}
+
+#ifdef VMXLIB_HAS_INTRINSICS
+
+struct alignas(4096) Region {
+    unsigned char bytes[4096];
+};
+
+inline void region_init(Region& r, uint32_t revision) {
+    for (size_t i = 0; i < sizeof r.bytes; i++) r.bytes[i] = 0;
+    r.bytes[0] = (unsigned char)(revision & 0xff);
+    r.bytes[1] = (unsigned char)((revision >> 8) & 0xff);
+    r.bytes[2] = (unsigned char)((revision >> 16) & 0xff);
+    r.bytes[3] = (unsigned char)((revision >> 24) & 0xff);
+}
+
+inline unsigned char vmxon(uint64_t pa) {
+    uint64_t p = pa;
+    return __vmx_on(&p);
+}
+
+inline unsigned char vmclear(uint64_t pa) {
+    uint64_t p = pa;
+    return __vmx_vmclear(&p);
+}
+
+inline unsigned char vmptrld(uint64_t pa) {
+    uint64_t p = pa;
+    return __vmx_vmptrld(&p);
+}
+
+inline uint64_t vmptrst() {
+    uint64_t p = 0;
+    __vmx_vmptrst(&p);
+    return p;
+}
+
+inline unsigned char vmread(uint32_t field, uint64_t* value) {
+    size_t v = 0;
+    unsigned char r = __vmx_vmread((size_t)field, &v);
+    *value = (uint64_t)v;
+    return r;
+}
+
+inline unsigned char vmwrite(uint32_t field, uint64_t value) {
+    return __vmx_vmwrite((size_t)field, (size_t)value);
+}
+
+inline unsigned char vmlaunch() { return __vmx_vmlaunch(); }
+inline unsigned char vmresume() { return __vmx_vmresume(); }
+inline void vmxoff() { __vmx_off(); }
+inline uint64_t rdmsr(uint32_t m) { return (uint64_t)__readmsr((unsigned long)m); }
+inline uint64_t cr0() { return (uint64_t)__readcr0(); }
+inline uint64_t cr3() { return (uint64_t)__readcr3(); }
+inline uint64_t cr4() { return (uint64_t)__readcr4(); }
+inline void write_cr4(uint64_t v) { __writecr4(v); }
+
+#endif
+
+}
