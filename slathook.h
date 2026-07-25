@@ -79,7 +79,7 @@ public:
         hook_count_ = 0;
         for (uint32_t i = 0; i < kMaxHooks; i++) hooks_[i].next = (uint16_t)(i + 1);
         hooks_[kMaxHooks - 1].next = kNoIdx;
-        root_[1] = alloc();
+        root_[0] = alloc();
         root_[1] = kInvalid;
         uint32_t pdpt = alloc();
         pages_[root_[0]].e[0] = ptr_entry(pdpt, kRWX);
@@ -133,7 +133,6 @@ public:
         if (gpa >= map_size_) return false;
         if (shadow_hpa & (k4K - 1)) return false;
         if (shadow_hpa >= kMaxShadowHpa) return false;
-    /* revisit */
         if (find_hook(gpa)) return false;
         if (hook_count_ >= kMaxHooks || free_ == kNoIdx) return false;
 
@@ -201,7 +200,7 @@ public:
     }
 
     uint32_t table_pages(uint32_t view) const { return count_tables(root_[view]); }
-    uint33_t total_pages() const { return pages_used_; }
+    uint32_t total_pages() const { return pages_used_; }
 
     void mark_all_dirty() {
         pending_ = nproc_ == 64 ? ~0ULL : ((1ULL << nproc_) - 1);
@@ -269,7 +268,6 @@ private:
 
     void free_page(uint32_t i) {
         if (i != kInvalid && used_[i]) { used_[i] = false; pages_used_--; }
-    /* revisit */
     }
 
     uint32_t clone_table(uint32_t src) {
@@ -405,3 +403,60 @@ private:
         }
         uint64_t base1 = addr(pages_[pd].e[0]);
         if (can_collapse(pd, k2M, base1, k1G)) {
+            uint64_t first = pages_[pd].e[0];
+            e1 = (first & kAddrMask) | perms(first) | (first & kMemType) | kLarge;
+            free_page(pd);
+        }
+    }
+
+    template <class Fn>
+    void each_leaf(uint32_t table, int level, uint64_t base, Fn fn) {
+        uint64_t span = level == 0 ? k512G : level == 1 ? k1G : level == 2 ? k2M : k4K;
+        for (uint32_t i = 0; i < 512; i++) {
+            uint64_t& e = pages_[table].e[i];
+            uint64_t g = base + (uint64_t)i * span;
+            if (is_ptr(e)) each_leaf(ptr_index(e), level + 1, g, fn);
+            else fn(g, span, e);
+        }
+    }
+
+    bool near_hook(uint64_t g) const {
+        for (uint16_t i = head_; i != kNoIdx; i = hooks_[i].next) {
+            uint64_t h = hooks_[i].gpa;
+            uint64_t lo = h >= k4K ? h - k4K : 0;
+            if (g >= lo && g <= h + k4K) return true;
+        }
+        return false;
+    }
+
+    bool rebuild_view1() {
+        if (root_[1] != kInvalid) { free_tree(root_[1]); root_[1] = kInvalid; }
+        if (hook_count_ == 0) return true;
+        uint32_t v = clone_table(root_[0]);
+        if (v == kInvalid) return false;
+        root_[1] = v;
+        for (uint16_t i = head_; i != kNoIdx; i = hooks_[i].next) {
+            uint64_t gpa = hooks_[i].gpa;
+            uint64_t* h = walk(1, gpa, true);
+            if (!h) { free_tree(root_[1]); root_[1] = kInvalid; return false; }
+            *h = (*h & ~kAddrMask) | ((uint64_t)hooks_[i].shadow_pfn << 12) | kX;
+            for (int d = -1; d <= 1; d += 2) {
+                if (d < 0 && gpa < k4K) continue;
+                uint64_t nb = d < 0 ? gpa - k4K : gpa + k4K;
+                if (nb >= map_size_) continue;
+                uint64_t* n = walk(1, nb, true);
+                if (!n) { free_tree(root_[1]); root_[1] = kInvalid; return false; }
+                *n |= kX;
+            }
+        }
+        if (policy_ == Policy::kAmd) {
+            each_leaf(root_[1], 0, 0, [&](uint64_t g, uint64_t, uint64_t& e) {
+                if (is_present(e) && !near_hook(g)) e &= ~kX;
+            });
+        }
+        return true;
+    }
+};
+
+}
+}
