@@ -90,7 +90,7 @@ static int do_cr(const char* a, const char* b, const char* c) {
 static int do_epte(const char* a) {
     uint64_t v = num(a);
     EptEntry e = ept_entry_decode(v);
-    printf("EPT entry  1x%016llX\n", (unsigned long long)v);
+    printf("EPT entry  0x%016llX\n", (unsigned long long)v);
     printf("  %c%c%c  mem type %u  ipat %s  large %s  A %s  D %s  X_U %s  suppress_ve %s\n",
            e.read ? 'r' : '-', e.write ? 'w' : '-', e.execute ? 'x' : '-',
            e.memory_type, on(e.ignore_pat), on(e.large), on(e.accessed),
@@ -152,7 +152,6 @@ static int do_err(const char* a) {
 }
 
 static int do_field(const char* a) {
-    /* revisit */
     uint32_t enc;
     if (a[0] == '0' && (a[1] == 'x' || a[1] == 'X')) enc = (uint32_t)num(a);
     else enc = field_by_name(a);
@@ -307,7 +306,6 @@ static int selftest_slat() {
     ck(h.remove_hook(0x202000), "remove one hook");
     ck(h.hook_count() == 1, "hook count back to 1");
     ck(h.translate(0x201000, kX, false).stop == Stop::kExecute,
-    /* revisit */
        "remaining hook still traps execute");
     ck(h.remove_hook(0x201000), "remove last hook");
     ck(h.hook_count() == 0, "hook count 0");
@@ -462,3 +460,69 @@ static int selftest() {
 
     ck(strcmp(exit_reason_name(48), "EPT_VIOLATION") == 0, "exit reason 48 is EPT_VIOLATION");
     ck(strcmp(exit_reason_name(10), "CPUID") == 0, "exit reason 10 is CPUID");
+    ck(exit_reason_name(5) == nullptr, "exit reason 5 is a hole");
+    ck(strcmp(vm_instruction_error(4), "VMLAUNCH with non-clear VMCS") == 0,
+       "vm-instruction error 4");
+    ck(vm_instruction_error(99) == nullptr, "unknown vm-instruction error");
+
+    FeatureControl smx_only = feature_control_decode(0x3);
+    ck(!vmxon_allowed(smx_only, false) && vmxon_allowed(smx_only, true),
+       "SMX-only permission does not allow VMXON outside SMX");
+    FeatureControl plain = feature_control_decode(0x5);
+    ck(vmxon_allowed(plain, false) && !vmxon_allowed(plain, true),
+       "outside-SMX permission does not allow VMXON inside SMX");
+    ck(vmxon_legal(feature_control_decode(0x1)) == false,
+       "locked with no permission bits is not legal");
+
+    Eptp bad_eptp = eptp_decode(0x1000 | 0x6 | 0x10);
+    ck(!bad_eptp.valid && bad_eptp.walk_levels == 0,
+       "reserved EPTP page-walk encoding is invalid, not 4-level");
+    ck(eptp_encode(0x1000, 6, 6, false) == 0,
+       "unsupported walk level is rejected by eptp_encode");
+    ck(eptp_decode(eptp_encode(0x1000, 6, 4, false)).valid,
+       "4-level EPTP round trip is valid");
+
+    uint64_t checked = 0;
+    ck(!ept_entry_encode_checked(0x1001, true, true, false, 6, false, &checked),
+       "misaligned EPT hpa is rejected");
+    ck(!ept_entry_encode_checked(0x100000, true, true, false, 6, true, &checked),
+       "misaligned large-page hpa is rejected");
+    ck(!ept_entry_encode_checked(0x1000, false, false, false, 6, false, &checked),
+       "no-permission EPT entry is rejected");
+    ck(!ept_entry_encode_checked(0x1000, true, true, false, 9, false, &checked),
+       "out-of-range memory type is rejected");
+    ck(!ept_entry_encode_checked(0x1000, true, true, false, 6, false, nullptr),
+       "null output pointer is rejected");
+    ck(ept_entry_encode_checked(0x200000, true, true, true, 6, true, &checked) &&
+       checked == ept_entry_encode(0x200000, true, true, true, 6, true),
+       "checked encoder matches unchecked for valid input");
+
+    bad += selftest_slat();
+
+    printf("  %s\n", bad ? "FAILED" : "PASS");
+    return bad ? 1 : 0;
+}
+
+int main(int argc, char** argv) {
+    if (argc < 2) return usage();
+    const char* c = argv[1];
+    if (!strcmp(c, "basic") && argc >= 3) return do_basic(argv[2]);
+    if (!strcmp(c, "fc") && argc >= 3) return do_fc(argv[2]);
+    if (!strcmp(c, "ctl") && argc >= 4) return do_ctl(argv[2], argv[3]);
+    if (!strcmp(c, "cr") && argc >= 5) return do_cr(argv[2], argv[3], argv[4]);
+    if (!strcmp(c, "epte") && argc >= 3) return do_epte(argv[2]);
+    if (!strcmp(c, "eptp") && argc >= 3) return do_eptp(argv[2]);
+    if (!strcmp(c, "qual") && argc >= 3) return do_qual(argv[2]);
+    if (!strcmp(c, "exit") && argc >= 3) return do_exit(argv[2]);
+    if (!strcmp(c, "err") && argc >= 3) return do_err(argv[2]);
+    if (!strcmp(c, "slat") && argc >= 3) return do_slat(argv[2]);
+    if (!strcmp(c, "slathook") && argc >= 3) return do_slathook(argv[2]);
+    if (!strcmp(c, "field") && argc >= 3) return do_field(argv[2]);
+    if (!strcmp(c, "enc") && argc >= 5)
+        return do_enc(argv[2], argv[3], argv[4], argc >= 6 && !strcmp(argv[5], "hi"));
+    if (!strcmp(c, "fields")) return do_fields();
+    if (!strcmp(c, "exits")) return do_exits();
+    if (!strcmp(c, "errors")) return do_errors();
+    if (!strcmp(c, "selftest")) return selftest();
+    return usage();
+}
