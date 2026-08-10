@@ -10,20 +10,18 @@ if errorlevel 1 (
     "%ProgramFiles%\Microsoft Visual Studio\2022\BuildTools"
     "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise"
   ) do (
-rem revisit
     if exist "%%~P\VC\Auxiliary\Build\vcvars64.bat" (
       call "%%~P\VC\Auxiliary\Build\vcvars64.bat" >nul
       goto :got
     )
   )
   echo [!] msvc x64 toolchain not found
-  exit /b 2
+  exit /b 1
 )
 :got
 
 cl /nologo /std:c++17 /EHsc /O2 /W3 /MT /I. /Isrc ^
    /Fe:build\vmxctl.exe src\vmxctl.cpp
-rem revisit
 if errorlevel 1 goto :fail
 
 echo [*] selftest
@@ -37,3 +35,8 @@ build\vmxctl.exe qual 0x1189
 
 echo.
 echo [+] build\vmxctl.exe
+exit /b 0
+
+:fail
+echo [!] failed
+exit /b 1
