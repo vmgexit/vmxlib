@@ -124,7 +124,6 @@ build.bat
 
 Output: `build\vmxctl.exe`. The build then runs `vmxctl selftest`; a failing
 assertion fails the build.
-TODO: expand this section
 
 ```
 [*] selftest
@@ -251,7 +250,6 @@ uint64_t fix_cr(uint64_t cr, uint64_t fixed0, uint64_t fixed1) {
 bit. `impossible_control_bits` tells you which bits of a desired control value
 cannot be set at all, which is usually the reason a `vmlaunch` fails with
 VM-instruction error 7.
-TODO: expand this section
 
 ---
 
@@ -379,3 +377,57 @@ the flush is gated on the bitmap rather than performed on every NMI.
 
 `vmxctl selftest` runs 103 assertions. The first 40 cover `vmx.h`: field
 encoding round trips, MSR decodes, `adjust_controls`, `fix_cr`, EPT/EPTP
+formats, exit reasons, VM-instruction errors, SMX-scoped VMXON, invalid EPTP
+page-walk encodings and checked-encoder rejections. The remaining 63 cover
+`slathook.h`:
+
+- 16-byte hook entries, 256 per page
+- 1G → 2M → 4K splits and the corresponding merges, with table pages freed
+- PTE strides, untouched adjacent large pages, and the full 512 GiB range in
+  `MapMode::k1G` including a hook above 1 GiB
+- zeroed PML4 entries reported as **unmapped**, not as permission-denied
+  translations
+- hook add/remove, shadow-page translation in `view1`, boundary pages
+- per-core invalidation bitmap, partial flush
+- view teardown and execute restoration after the last hook is removed
+- AMD non-hooked-page execute faults with reads unaffected
+- hook-table capacity at 256, clean drain, and free-slot reuse
+- rejection of shadow addresses above the 44-bit PFN limit, misaligned GPAs
+  and misaligned shadow HPAs, with no partial state left behind
+- page-table arena exhaustion, failed clone rollback, and verification that
+  every accepted hook is installed in both views
+
+Sample output:
+
+```
+slathook selftest
+  ok    hook entry is 16 bytes
+  ok    256 hooks fit in one 4K page
+  ok    1G identity map is PML4 + PDPT
+  ok    split 1G leaf
+  ...
+  PASS
+```
+
+No driver, no VM, no reboot. `slathook.h` is a model, so its results are
+properties of the bookkeeping, not claims about hardware behaviour.
+
+---
+
+## Sources
+
+- [Intel SDM][sdm] vol 3C appendix C (basic exit reasons), table 27-7 (EPT
+  violation qualification), vol 3D appendix B (VMCS field encodings)
+- [Linux `include/uapi/asm/vmx.h`][uapi] and
+  [`arch/x86/include/asm/vmx.h`][asmvmx] for exit reasons and field encodings
+- [hyper-reV §4.5][hyperrev] for the SLAT hook state machine that `slathook.h`
+  models. read for the architecture, not copied
+- `notes.txt` records where the SDM revision I read and the Linux headers
+  disagree
+
+---
+
+## License
+
+MIT — see `LICENSE`. Use it as a header, a decoder, or a starting point for your
+own hypervisor work; keep the copyright notice if you redistribute it.
