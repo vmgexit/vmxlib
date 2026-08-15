@@ -1,0 +1,10 @@
+IA32_VMX_BASIC  0x00D810000000001A
+  vmcs revision      0x0000001A
+  vmxon/vmcs size    4096 bytes (0x1000)
+  memory type        6 (WB)
+  32-bit phys only   no
+  dual monitor smi   no
+  ins/outs info      yes
+  true controls      yes
+  no hw error code   no
+  -> region_init(rev 0x1A, 4096 bytes)
