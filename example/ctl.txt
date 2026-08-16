@@ -1,0 +1,6 @@
+capability msr   0x0000007F00000001
+  must-be-1      0x00000001
+  allowed-to-be-1 0x0000007F
+  desired         0x00000040
+  adjusted        0x00000041
+  impossible      0x00000000
