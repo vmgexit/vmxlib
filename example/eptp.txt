@@ -1,0 +1,6 @@
+EPTP  0x000000000000101E
+  pml4        0x1000
+  mem type    6 (WB)
+  walk levels 4  (pwl bits 5:3 = 0x18)
+  A/D enabled no
+  encoding    valid
