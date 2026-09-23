@@ -1,0 +1,108 @@
+vmxlib selftest
+  ok    GUEST_RIP encoding
+  ok    HOST_RIP encoding
+  ok    VM_EXIT_REASON encoding
+  ok    EPT_POINTER encoding
+  ok    EPT_POINTER_HIGH encoding
+  ok    VMCS_LINK_POINTER encoding
+  ok    field_decode round trip with high bit
+  ok    field_name lookup
+  ok    field_by_name lookup
+  ok    unknown field name
+  ok    IA32_VMX_BASIC encode/decode
+  ok    IA32_FEATURE_CONTROL vmxon legal
+  ok    unlocked feature control is not legal
+  ok    adjust_controls forces must-be-1 bits
+  ok    impossible bits outside allowed-1
+  ok    fix_cr applies fixed0
+  ok    cr_conflicts reports missing fixed0
+  ok    fix_cr masks off fixed1-forbidden bits
+  ok    EPT entry encode/decode
+  ok    EPTP default is WB + 4-level (0x1E low bits)
+  ok    EPTP decode
+  ok    5-level EPTP walk
+  ok    EPT violation qualification bits
+  ok    exit reason 48 is EPT_VIOLATION
+  ok    exit reason 10 is CPUID
+  ok    exit reason 5 is a hole
+  ok    vm-instruction error 4
+  ok    unknown vm-instruction error
+  ok    SMX-only permission does not allow VMXON outside SMX
+  ok    outside-SMX permission does not allow VMXON inside SMX
+  ok    locked with no permission bits is not legal
+  ok    reserved EPTP page-walk encoding is invalid, not 4-level
+  ok    unsupported walk level is rejected by eptp_encode
+  ok    4-level EPTP round trip is valid
+  ok    misaligned EPT hpa is rejected
+  ok    misaligned large-page hpa is rejected
+  ok    no-permission EPT entry is rejected
+  ok    out-of-range memory type is rejected
+  ok    null output pointer is rejected
+  ok    checked encoder matches unchecked for valid input
+
+slathook selftest
+  ok    hook entry is 16 bytes
+  ok    256 hooks fit in one 4K page
+  ok    1G identity map is PML4 + PDPT
+  ok    1G leaf translates as large
+  ok    split 1G leaf
+  ok    1G split adds a PD
+  ok    2M leaf after first split
+  ok    split 2M leaf
+  ok    2M split adds a PT
+  ok    4K leaf after full split
+  ok    PTE strides are 4K
+  ok    adjacent 2M page unaffected
+  ok    merge back to 2M
+  ok    PT freed on merge
+  ok    merge back to 1G
+  ok    PD freed on merge
+  ok    no hooks initially
+  ok    add hook at 0x201000
+  ok    hook count 1
+  ok    hook view created on first hook
+  ok    find_hook by GPA
+  ok    orig view traps execute on hooked page
+  ok    orig view still reads hooked page
+  ok    hook view maps the shadow page
+  ok    translation reports the page is hooked
+  ok    hook view executes the shadow page
+  ok    page before hooked page stays executable
+  ok    page after hooked page stays executable
+  ok    second hook in same 2M range
+  ok    hook count 2
+  ok    all 8 processors marked for invalidation
+  ok    flush clears only one processor
+  ok    remove one hook
+  ok    hook count back to 1
+  ok    remaining hook still traps execute
+  ok    remove last hook
+  ok    hook count 0
+  ok    hook view torn down with last hook
+  ok    view0 merged back to 2M pages
+  ok    orig execute restored after merge
+  ok    removing a missing hook fails
+  ok    AMD: add hook
+  ok    AMD: hooked page executable in hook view
+  ok    AMD: non-hooked 4K page faults on execute
+  ok    AMD: page before hooked page still executable
+  ok    AMD: reads are unaffected
+  ok    hook table caps at 256 entries
+  ok    hook table drains cleanly
+  ok    freed slots are reusable
+  ok    k1G map covers its full 512GiB range
+  ok    absent PML4 entry is unmapped, not a blocked translation
+  ok    zeroed entry never produces an hpa
+  ok    hook above 1GiB accepted in k1G mode
+  ok    high hook is present in the hook table
+  ok    shadow hpa above the 44-bit PFN limit is rejected
+  ok    rejected hook leaves no metadata and no hook view
+  ok    gpa is aligned to 4K before insertion
+  ok    misaligned shadow hpa is rejected
+  ok    page-table arena exhaustion is detected
+  ok    no page leak after a failed clone
+  ok    every accepted hook is installed in both views
+  ok    hook in an unmapped region fails
+  ok    failed hook rolls back allocations and metadata
+  PASS
+  PASS
