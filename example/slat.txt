@@ -1,0 +1,7 @@
+SLAT split/merge cycle at 0x400000
+  start     2 table pages, leaf 0x40000000 bytes
+  split 1G  3 table pages, leaf 0x200000 bytes
+  split 2M  4 table pages, leaf 0x1000 bytes
+  +4K       hpa 0x401000  stop none
+  merge     3 table pages, leaf 0x200000 bytes
+  merge     2 table pages, leaf 0x40000000 bytes
