@@ -1,0 +1,5 @@
+SLAT code hook at 0x201000  shadow 0x901000
+  hooks     1  view0 tables 4  view1 tables 4  pending 0xFF
+  orig      stop execute  hpa 0x201000
+  hook      stop none  hpa 0x901000  hooked yes
+  removed   hooks 0  view0 tables 3  view1 exists no
