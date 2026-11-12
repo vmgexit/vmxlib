@@ -1,0 +1,85 @@
+- VMCS field encoding: width at bits 14:13 (0=16bit, 1=64bit, 2=32bit,
+  3=natural), area at 11:10 (0=control, 1=exit info, 2=guest, 3=host),
+  index at 9:1, access type at bit 0. a "_HIGH" field is just the same
+  encoding with bit 0 set, e.g. EPT_POINTER 0x201A / EPT_POINTER_HIGH 0x201B.
+- I had IA32_VMX_BASIC wrong on the first pass. correct layout:
+    bits 30:0  vmcs revision
+    bits 44:32 vmxon/vmcs region size in bytes
+    bit 48     vmxon/vmcs physical addresses limited to 32 bits
+    bit 49     dual-monitor treatment of SMI/SMM
+    bits 53:50 memory type for vmcs (0=UC, 6=WB) -- FOUR bits, not one
+    bit 54     ins/outs instruction info on vm exit
+    bit 55     true control MSRs available (0x48D..0x490)
+    bit 56     no hardware error code on consistency checks
+    bit 60     no SEAMRET/INVD VMCS behaviour
+  I originally had memory type at bit 49 and true controls at 53. linux
+  arch/x86/include/asm/vmx.h has the right shifts.
+- if bit 55 is set, use IA32_VMX_TRUE_*_CTLS instead of the legacy 0x481..0x484
+  MSRs. the legacy ones have "must be 1" bits that the true ones don't.
+- control adjustment: low 32 bits of the capability MSR are bits that MUST be 1,
+  high 32 are bits ALLOWED to be 1. result = (desired | low) & high.
+  bits you asked for outside high are impossible.
+- CR0/CR4 fixed bits: IA32_VMX_CR0_FIXED0 = must be 1, FIXED1 = allowed to be 1.
+  result = (cr | fixed0) & fixed1. forgetting fixed1 is the usual reason
+  vmlaunch fails with "invalid guest state".
+- EPTP low bits are not just the memory type. bits 2:0 = mem type (6=WB),
+  bits 5:3 = page walk length minus one (0x18 for 4-level, 0x20 for 5-level),
+  bit 6 = enable accessed/dirty. a normal WB 4-level EPTP has low byte 0x1E.
+  I forgot the walk-length bits and produced 0x06, which is reserved.
+- EPT violation exit qualification (SDM table 27-7) bits 0..7:
+    0 data read, 1 data write, 2 instruction fetch
+    3/4/5 logical-AND of the R/W/X bits of the EPT entries
+    7 guest linear address field valid
+    8 (only if 7) access was to a GPA translated from a linear address
+    12 NMI unblocking due to IRET
+  the SDM revision I first read calls bits 11:9 reserved and bit 6 reserved.
+  linux/KVM decodes bit 6 as X_U and bits 9/10/11 as GVA user/writable/NX.
+  both are correct: those bits are defined once "advanced VM-exit information
+  for EPT violations" / "mode-based execute control for EPT" are enabled.
+  the decoder prints them separately so you can tell which spec you are on.
+- bits 3:5 are cleared to 0 if any EPT entry in the walk was not present, so
+  "R W X all zero" does not necessarily mean the page had no permissions.
+- VM-exit basic reasons have holes at 5, 11, 17, 35, 38, 42. do not build a
+  dense array indexed by reason without checking.
+- VM_EXIT_REASON also carries flags: bit 31 = VM-entry failure, bit 27 = exit
+  from SGX enclave mode. mask with 0xffff before the lookup.
+- VM-instruction error 4 ("VMLAUNCH with non-clear VMCS") is what you get when
+  you forget vmclear after vmptrld. error 7 is invalid control fields.
+- slathook.h models the bookkeeping from hyper-reV section 4.5, not the code.
+  read that section for the architecture; this is an independent MIT model of
+  the state machine. no driver, no VM, no reboot.
+- split/merge are ONE level per call. my first version split straight down to
+  4K and merged straight back to 1G in a single call, which made the page-count
+  assertions meaningless. a hook still needs a full walk to 4K, but that is
+  walk(view, gpa, true), not split().
+- can_collapse has to check for remaining hooks in the whole merge range, not
+  just on the target page. otherwise removing one of two hooks in the same 2M
+  page collapses the PT and the second hook silently loses its PTE.
+- the boundary rule (page before and after the hooked page stay executable in
+  the hook view) is for instructions split across a 4K page boundary. easy to
+  forget, and it breaks can_collapse until those PTEs are restored on removal.
+- AMD NPT has no read bit, so execute-only pages are impossible. the inverted
+  policy (all non-hooked pages non-executable in the hook view) costs a nested
+  page fault on every execution of a hooked page. hyper-reV applies the
+  inversion on Intel deliberately to evade a specific class of check; the model
+  here keeps it AMD-only.
+- the invalidation bitmap exists because Hyper-V uses NMIs for its own IPI.
+  flushing every NMI you receive would stomp on that. gate on the bitmap.
+- Slat has a 64 KiB arena on the stack. four of them in one function exceeded
+  the 1 MB default stack and crashed with 0xC00000FD. kMaxPages went from 64
+  to 16; raise it only if you move the object to static or heap storage.
+- table pointers use bit 62 as a tag, outside the physical address mask. that
+  is a model artifact, not an EPT encoding. do not confuse it with a real entry.
+- add_hook() is transactional: both views are built on a copy, the original is
+  checked to trap execute and the hook view to map the shadow page, and only
+  then is the result committed. a failed clone frees its partial tree.
+- HookEntry is 16 bytes so 256 fit in one 4 KiB page. shadow_pfn is therefore
+  32 bits and shadow HPAs stop at 44 bits; add_hook() rejects anything above
+  kMaxShadowHpa rather than truncating.
+- a zeroed page-table entry is an absent mapping. is_present() needs at least
+  one R/W/X bit and translate() reports Stop::kUnmapped.
+- eptp_decode() reports valid=false and walk_levels=0 for a reserved
+  page-walk-length encoding. eptp_encode() rejects unsupported levels.
+- the checked encoder variants reject misaligned addresses, out-of-range memory
+  types and no-permission entries. vmxon_allowed(f, in_smx) is the one to use;
+  vmxon_legal(f) only says the lock bit and one permission bit are set.
